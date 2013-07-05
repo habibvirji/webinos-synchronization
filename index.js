@@ -25,9 +25,17 @@ var Sync = function () {
      */
     this.getObjectHash = function (jsonObject) {
         var myKey, diff = {};
+        function Arr(arr) {
+            var tmp = [];
+            for (var i = 0; i < arr.length; i = i + 1){
+                tmp.push(require("crypto").createHash ("md5").update (JSON.stringify (arr[i])).digest ("hex"));
+            }
+            return tmp.sort();
+        }
         for (myKey in jsonObject) {
             if (jsonObject.hasOwnProperty (myKey)) { // purposefully ignoring child elts
-                diff[myKey] = require("crypto").createHash ("md5").update (JSON.stringify (jsonObject[myKey])).digest ("hex");
+                var val = Object.prototype.toString.call(jsonObject[myKey]) === "[object Array]"? Arr(jsonObject[myKey]) : jsonObject[myKey];
+                diff[myKey] = require("crypto").createHash ("md5").update (JSON.stringify (val)).digest ("hex");
             }
         }
         return diff;
@@ -80,49 +88,52 @@ var Sync = function () {
 
      function contains(localArr, lname) {
          for (var i = 0 ; i < localArr.length; i = i + 1) {
-            if (localArr[i] == lname) {return true; }
+            if (localArr[i].api == lname.api && localArr[i].serviceAddress == lname.serviceAddress) return false;
          }
-         return false;
+         return true;
      }
 
     function findDiffApply(remoteJson, localJson) {
-        var localDiff = {}, localArr= [];
+        var localDiff = Object.prototype.toString.call(remoteJson) === "[object Array]"? []: {}, localArr= [];
         if (Object.prototype.toString.call(remoteJson) === "[object Array]" &&
             Object.prototype.toString.call(localJson) === "[object Array]") {
             remoteJson.forEach(function(rname, rindex){
                 if (rname && rname.id) {
                     var found = false;
                     localJson.forEach(function(lname, index){
-                       if (rname == lname) {
-                           if(!contains(localArr, rname)) localArr.push(rname); // If
+                       if (rname.api === lname.api && rname.serviceAddress === lname.serviceAddress) {
+                           if(contains(localArr, rname)) localArr.push(rname); // If
                            found = true;
                        }
                        if (index+1 === localJson.length && !found) {
-                           if(!contains(localArr, rname)) localArr.push(rname); // If
-                           if(!contains(localArr, lname)) localArr.push(lname);
+                           if(contains(localArr, rname)) localArr.push(rname);
+                           if(contains(localArr, lname)) localArr.push(lname);
                       }
                     });
+                    if(localJson.length === 0 ){
+                        if(contains(localArr, rname)) localArr.push(rname);
+                    }
                 }
                 if (rindex+1 === remoteJson.length) {
                     localJson.forEach(function(lname, lindex){
-                       if(!contains(localArr, lname)) localArr.push(lname);
-                       if(lindex+1 === localJson.length) {console.log("findDiffApply", localArr);return localArr;}
+                       if(contains(localArr, lname)) localArr.push(lname);
                     });
+
                 }
             });
             if (remoteJson.length === 0) {
                 localJson.forEach(function(lname, lindex){
-                    if(!contains(localArr, lname)) localArr.push(lname);
-                    if(lindex+1 === localJson.length) {console.log("findDiffApply", localArr);return localArr;}
+                    if(contains(localArr, lname)) localArr.push(lname);
                 });
             }
+            return localArr;
         } else if (Object.prototype.toString.call(remoteJson) === "[object Object]") {
             for (var key in remoteJson) {
                 if (remoteJson.hasOwnProperty(key) && localJson && localJson.hasOwnProperty(key)){
                     if(typeof remoteJson[key] === "string") {
                         localDiff[key] = (remoteJson[key] !== localJson[key]) ? remoteJson[key]: localJson[key];
                     } else if (typeof remoteJson[key] === "object") {
-                        localDiff[key]=findDiffApply(remoteJson[key], localJson[key]);
+                        localDiff[key]=  findDiffApply(remoteJson[key], localJson[key]);
                     }
                 } else {
                    localDiff[key] = remoteJson[key];
@@ -141,8 +152,6 @@ var Sync = function () {
         return localDiff;
     }
 
-
-
     /**
      * Here remoteJsonObject is actual data contents.
      */
@@ -160,21 +169,12 @@ var Sync = function () {
                 remoteJsonObject[key] !== localJson[key]) { // Element are string
                     localJson[key] = remoteJsonObject[key];
                 } else if (typeof remoteJsonObject[key] === "object"){
-                    localJson[key] = findDiffApply(remoteJsonObject[key], localJson[key]);
+                    var returnValue = findDiffApply(remoteJsonObject[key], localJson[key]);
+                    localJson[key] = returnValue;
                 }
             }
         });
     };
 };
-var ParseXML = function(xmlData, callback) {
-    var xml2js = require('xml2js');
-    var xmlParser = new xml2js.Parser(xml2js.defaults["0.2"]);
-    xmlParser.parseString(xmlData, function(err, jsonData) {
-        if(!err) {
-            callback(jsonData);
-        }
-    });
-};
 
 exports.sync = Sync;
-exports.parseXML = ParseXML;
